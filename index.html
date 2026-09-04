@@ -747,12 +747,11 @@
         };
 
         // ============================================
-        // LAYOUT
+        // LAYOUT (พร้อมระบบเปิด-ปิด Sidebar)
         // ============================================
-    
         const AppLayout = () => {
             const [page, setPage] = useState('tts');
-            const [isOpen, setIsOpen] = useState(false); // สถานะเปิด/ปิด Sidebar
+            const [isOpen, setIsOpen] = useState(false);
 
             const nav = [
                 { id: 'tts', label: 'လၢႆႈတူဝ်လိၵ်ႈပဵၼ်သဵင်', icon: <Icons.TextToSpeech/> },
@@ -762,12 +761,12 @@
 
             const handleNavClick = (id) => {
                 setPage(id);
-                setIsOpen(false); // เมื่อกดเลือกเมนูแล้ว ให้ซ่อน Sidebar อัตโนมัติ
+                setIsOpen(false);
             };
 
             return (
                 <div className="flex min-h-screen relative overflow-x-hidden">
-                    {/* ปุ่ม Hamburger Toggle (จะลอยอยู่มุมซ้ายบนตลอดเวลา) */}
+                    {/* ปุ่ม Hamburger Toggle */}
                     <button 
                         onClick={() => setIsOpen(!isOpen)}
                         className="fixed top-4 left-4 z-50 p-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-md hover:bg-slate-50 active:scale-95 transition-all"
@@ -776,7 +775,7 @@
                         {isOpen ? <Icons.Close c="w-6 h-6"/> : <Icons.Menu c="w-6 h-6"/>}
                     </button>
 
-                    {/* ฉากหลังสีดำโปร่งแสง (Overlay) สำหรับกดปิดเมื่อเปิด Sidebar บนมือถือ */}
+                    {/* Background Overlay */}
                     {isOpen && (
                         <div 
                             onClick={() => setIsOpen(false)}
@@ -784,7 +783,7 @@
                         />
                     )}
 
-                    {/* SIDEBAR (เลื่อน เข้า-ออก ตามสถานะ isOpen) */}
+                    {/* SIDEBAR */}
                     <aside className={`w-64 bg-white border-r border-slate-200 fixed h-full z-40 flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-6 pt-16 flex items-center gap-3 border-b border-slate-100">
                             <div className="w-10 h-10 bg-[#22A06B] rounded-2xl flex items-center justify-center text-white shadow-md shadow-green-900/10 flex-shrink-0">
@@ -805,7 +804,7 @@
                         </nav>
                     </aside>
 
-                    {/* MAIN CONTENT (พื้นที่ทำงานหลัก ได้พื้นที่เต็มจอ 100%) */}
+                    {/* MAIN CONTENT */}
                     <main className="flex-1 bg-slate-50 min-h-screen pt-12 md:pt-4">
                         {page === 'tts' && <TextToSpeechPage/>}
                         {page === 'audio' && <MyAudioPage/>}
