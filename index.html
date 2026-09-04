@@ -749,19 +749,47 @@
         // ============================================
         // LAYOUT
         // ============================================
+       // ============================================
+        // LAYOUT (พร้อมระบบเปิด-ปิด Sidebar)
+        // ============================================
         const AppLayout = () => {
             const [page, setPage] = useState('tts');
+            const [isOpen, setIsOpen] = useState(false); // สถานะเปิด/ปิด Sidebar
+
             const nav = [
                 { id: 'tts', label: 'လၢႆႈတူဝ်လိၵ်ႈပဵၼ်သဵင်', icon: <Icons.TextToSpeech/> },
                 { id: 'audio', label: 'ၾၢႆႇသဵင်', icon: <Icons.AudioFile/> },
                 { id: 'settings', label: 'တီႈမေး', icon: <Icons.Settings/> },
             ];
 
+            const handleNavClick = (id) => {
+                setPage(id);
+                setIsOpen(false); // เมื่อกดเลือกเมนูแล้ว ให้ซ่อน Sidebar อัตโนมัติ
+            };
+
             return (
-                <div className="flex min-h-screen">
-                    <aside className="w-64 bg-white border-r border-slate-200 fixed h-full z-30 hidden md:flex flex-col">
-                        <div className="p-6 flex items-center gap-3 border-b border-slate-100">
-                            <div className="w-10 h-10 bg-[#22A06B] rounded-2xl flex items-center justify-center text-white shadow-md shadow-green-900/10">
+                <div className="flex min-h-screen relative overflow-x-hidden">
+                    {/* ปุ่ม Hamburger Toggle (จะลอยอยู่มุมซ้ายบนตลอดเวลา) */}
+                    <button 
+                        onClick={() => setIsOpen(!isOpen)}
+                        className="fixed top-4 left-4 z-50 p-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-md hover:bg-slate-50 active:scale-95 transition-all"
+                        title="เปิด/ปิด เมนู"
+                    >
+                        {isOpen ? <Icons.Close c="w-6 h-6"/> : <Icons.Menu c="w-6 h-6"/>}
+                    </button>
+
+                    {/* ฉากหลังสีดำโปร่งแสง (Overlay) สำหรับกดปิดเมื่อเปิด Sidebar บนมือถือ */}
+                    {isOpen && (
+                        <div 
+                            onClick={() => setIsOpen(false)}
+                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 transition-opacity"
+                        />
+                    )}
+
+                    {/* SIDEBAR (เลื่อน เข้า-ออก ตามสถานะ isOpen) */}
+                    <aside className={`w-64 bg-white border-r border-slate-200 fixed h-full z-40 flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="p-6 pt-16 flex items-center gap-3 border-b border-slate-100">
+                            <div className="w-10 h-10 bg-[#22A06B] rounded-2xl flex items-center justify-center text-white shadow-md shadow-green-900/10 flex-shrink-0">
                                 <Icons.Waveform c="w-6 h-6"/>
                             </div>
                             <div>
@@ -771,7 +799,7 @@
                         </div>
                         <nav className="flex-1 p-4 space-y-1">
                             {nav.map(item => (
-                                <button key={item.id} onClick={() => setPage(item.id)}
+                                <button key={item.id} onClick={() => handleNavClick(item.id)}
                                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${page === item.id ? 'bg-[#E8F5EE] text-[#22A06B]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
                                     {item.icon} {item.label}
                                 </button>
@@ -779,7 +807,8 @@
                         </nav>
                     </aside>
 
-                    <main className="flex-1 md:ml-64 bg-slate-50 min-h-screen">
+                    {/* MAIN CONTENT (พื้นที่ทำงานหลัก ได้พื้นที่เต็มจอ 100%) */}
+                    <main className="flex-1 bg-slate-50 min-h-screen pt-12 md:pt-4">
                         {page === 'tts' && <TextToSpeechPage/>}
                         {page === 'audio' && <MyAudioPage/>}
                         {page === 'settings' && <SettingsPage/>}
@@ -787,12 +816,6 @@
                 </div>
             );
         };
-
-        const App = () => (
-            <ToastProvider>
-                <AppLayout/>
-            </ToastProvider>
-        );
 
         ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
     </script>
