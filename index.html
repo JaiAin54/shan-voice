@@ -13,6 +13,16 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Google tag (gtag.js) -->
+ <script async src="https://www.googletagmanager.com/gtag/js?id=G-LGZ5Q2F7GW"></script>
+ <script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-LGZ5Q2F7GW');
+ </script>
+
     <style>
         :root {
             --primary: #22A06B;
@@ -746,12 +756,24 @@
             );
         };
 
+    
+    
         // ============================================
-        // LAYOUT (พร้อมระบบเปิด-ปิด Sidebar)
+        // LAYOUT (พร้อมระบบสไลด์ Sidebar และ Google Analytics)
         // ============================================
         const AppLayout = () => {
             const [page, setPage] = useState('tts');
             const [isOpen, setIsOpen] = useState(false);
+
+            // ติดตามการสลับหน้าไปยัง Google Analytics
+            React.useEffect(() => {
+                if (window.gtag) {
+                    window.gtag('event', 'page_view', {
+                        page_title: page,
+                        page_path: `/${page}`
+                    });
+                }
+            }, [page]);
 
             const nav = [
                 { id: 'tts', label: 'လၢႆႈတူဝ်လိၵ်ႈပဵၼ်သဵင်', icon: <Icons.TextToSpeech/> },
