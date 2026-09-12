@@ -13,6 +13,9 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- FingerprintJS สำหรับตรวจจับ Device ID ล็อก 1 เครื่อง -->
+    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
+
     <!-- Google tag (gtag.js) -->
  <script async src="https://www.googletagmanager.com/gtag/js?id=G-LGZ5Q2F7GW"></script>
  <script>
@@ -147,10 +150,20 @@
         };
 
         // ============================================
-        // TTS SERVICE – Gradio SSE API (คงเดิม 100%)
+        // TTS SERVICE – Gradio SSE API + License Validation
         // ============================================
         const TtsService = {
             API_BASE_URL: 'https://innkl24-shan-tts-api.hf.space',
+
+            async getDeviceId() {
+                try {
+                    const fp = await FingerprintJS.load();
+                    const result = await fp.get();
+                    return result.visitorId;
+                } catch {
+                    return 'unknown_device';
+                }
+            },
 
             async _readSSE(streamUrl) {
                 const response = await fetch(streamUrl);
@@ -180,12 +193,14 @@
                 throw new Error('ไม่ได้รับผลลัพธ์จาก SSE stream');
             },
 
-            async generateSpeech(text, speed = 'normal') {
+            async generateSpeech(text, speed = 'normal', keyCode = '') {
+                const deviceId = await this.getDeviceId();
                 const rateMap = { slow: 0.7, normal: 1.0, fast: 1.3 };
                 const speedValue = rateMap[speed] || 1.0;
 
+                // ส่ง text, key_code และ device_id ไปประมวลผล
                 const callUrl = `${this.API_BASE_URL}/gradio_api/call/text_to_speech_api`;
-                const payload = { data: [text, null, speedValue] };
+                const payload = { data: [text, null, speedValue, keyCode, deviceId] };
 
                 const response = await fetch(callUrl, {
                     method: 'POST',
@@ -196,7 +211,7 @@
 
                 if (!response.ok) {
                     const err = await response.text();
-                    throw new Error(`เซิร์ฟเวอร์ตอบกลับ ${response.status}`);
+                    throw new Error(`เซิร์ฟเวอร์ตอบกลับ ${response.status}: ${err}`);
                 }
 
                 const { event_id } = await response.json();
@@ -253,6 +268,7 @@
         const StorageService = {
             HISTORY_KEY: 'shan_voice_history',
             SETTINGS_KEY: 'shan_voice_settings',
+            LICENSE_KEY: 'shan_voice_license_key',
             getHistory() {
                 try { return JSON.parse(localStorage.getItem(this.HISTORY_KEY)) || []; } catch { return []; }
             },
@@ -265,6 +281,12 @@
             saveSettings(s) {
                 try { localStorage.setItem(this.SETTINGS_KEY, JSON.stringify(s)); } catch {}
             },
+            getLicenseKey() {
+                return localStorage.getItem(this.LICENSE_KEY) || '';
+            },
+            saveLicenseKey(key) {
+                localStorage.setItem(this.LICENSE_KEY, key);
+            }
         };
 
         // ============================================
@@ -289,6 +311,7 @@
             Clock: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
             User: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>,
             Edit: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>,
+            Key: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>,
         };
 
         // ============================================
@@ -479,7 +502,6 @@
 
         const AudioHistory = ({ history, onDownload, onDelete, onRestore }) => {
             const [playingId, setPlayingId] = useState(null);
-            const audioRef = useRef(null);
 
             const handleItemPlay = (item) => {
                 if (playingId === item.id) {
@@ -508,7 +530,6 @@
                                 <p className="text-xs text-slate-400 mt-1">{item.date}</p>
                             </div>
                             
-                            {/* Minimal Icon Controls */}
                             <div className="flex items-center gap-1">
                                 <button onClick={() => onRestore && onRestore(item.originalText || item.textPreview)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="ၸႂ်ႉၶေႃႈၵႂၢမ်းၼႆႉ">
                                     <Icons.Edit c="w-4 h-4"/>
@@ -534,6 +555,7 @@
         // ============================================
         const TextToSpeechPage = () => {
             const [text, setText] = useState('');
+            const [keyCode, setKeyCode] = useState(StorageService.getLicenseKey());
             const [loading, setLoading] = useState(false);
             const [elapsedTime, setElapsedTime] = useState(0);
             const [audioResult, setAudioResult] = useState(null);
@@ -562,16 +584,29 @@
             }, []);
 
             const count = text.length;
-            const canGenerate = count > 0 && count <= 500 && !loading;
+            const canGenerate = count > 0 && count <= 500 && keyCode.trim() !== '' && !loading;
 
             const handleClear = () => { setText(''); setAudioResult(null); setError(null); };
 
+            const handleKeyChange = (e) => {
+                const val = e.target.value.toUpperCase();
+                setKeyCode(val);
+                StorageService.saveLicenseKey(val);
+            };
+
             const handleGenerate = async () => {
-                if (!canGenerate) return;
+                if (!canGenerate) {
+                    if (!keyCode.trim()) {
+                        setError('ၵရုဏႃႇထႅမ်ၼႄႉသွင်းႁူဝ်ႁၢႆး (กรุณากรอกรหัสเปิดใช้งาน License Key)');
+                        addToast('กรุณากรอกรหัสเปิดใช้งาน', 'error');
+                    }
+                    return;
+                }
+
                 setLoading(true); setError(null); setAudioResult(null);
                 try {
                     const settings = StorageService.getSettings();
-                    const audioUrl = await TtsService.generateSpeech(text, settings.defaultSpeed || 'normal');
+                    const audioUrl = await TtsService.generateSpeech(text, settings.defaultSpeed || 'normal', keyCode);
                     const filename = `shan-voice-${Date.now()}.wav`;
                     
                     setAudioResult({ url: audioUrl, filename });
@@ -623,6 +658,22 @@
                 <div className="max-w-6xl mx-auto px-4 py-8">
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div className="lg:col-span-2 space-y-6">
+                            
+                            {/* 🔑 CARD สำหรับกรอก LICENSE KEY */}
+                            <div className="card p-4 bg-emerald-50/50 border-emerald-100 flex flex-col md:flex-row items-center gap-3">
+                                <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm flex-shrink-0">
+                                    <Icons.Key c="w-5 h-5 text-[#22A06B]"/>
+                                    <span>ႁူဝ်ႁၢႆး (License Key):</span>
+                                </div>
+                                <input 
+                                    type="text"
+                                    value={keyCode}
+                                    onChange={handleKeyChange}
+                                    placeholder="SHAN-VOICE-XXXX-XXXX"
+                                    className="w-full font-mono text-sm uppercase px-3 py-2 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-[#22A06B] outline-none"
+                                />
+                            </div>
+
                             <div className="card p-6">
                                 <div className="flex justify-between items-center mb-3">
                                     <h3 className="font-bold text-slate-800">ၶေႃႈၵႂၢမ်းၸဝ်ႈၵဝ်ႇ</h3>
@@ -756,16 +807,13 @@
             );
         };
 
-    
-    
         // ============================================
-        // LAYOUT (พร้อมระบบสไลด์ Sidebar และ Google Analytics)
+        // LAYOUT
         // ============================================
         const AppLayout = () => {
             const [page, setPage] = useState('tts');
             const [isOpen, setIsOpen] = useState(false);
 
-            // ติดตามการสลับหน้าไปยัง Google Analytics
             React.useEffect(() => {
                 if (window.gtag) {
                     window.gtag('event', 'page_view', {
@@ -788,7 +836,6 @@
 
             return (
                 <div className="flex min-h-screen relative overflow-x-hidden">
-                    {/* ปุ่ม Hamburger Toggle */}
                     <button 
                         onClick={() => setIsOpen(!isOpen)}
                         className="fixed top-4 left-4 z-50 p-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-md hover:bg-slate-50 active:scale-95 transition-all"
@@ -797,7 +844,6 @@
                         {isOpen ? <Icons.Close c="w-6 h-6"/> : <Icons.Menu c="w-6 h-6"/>}
                     </button>
 
-                    {/* Background Overlay */}
                     {isOpen && (
                         <div 
                             onClick={() => setIsOpen(false)}
@@ -805,7 +851,6 @@
                         />
                     )}
 
-                    {/* SIDEBAR */}
                     <aside className={`w-64 bg-white border-r border-slate-200 fixed h-full z-40 flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-6 pt-16 flex items-center gap-3 border-b border-slate-100">
                             <div className="w-10 h-10 bg-[#22A06B] rounded-2xl flex items-center justify-center text-white shadow-md shadow-green-900/10 flex-shrink-0">
@@ -826,7 +871,6 @@
                         </nav>
                     </aside>
 
-                    {/* MAIN CONTENT */}
                     <main className="flex-1 bg-slate-50 min-h-screen pt-12 md:pt-4">
                         {page === 'tts' && <TextToSpeechPage/>}
                         {page === 'audio' && <MyAudioPage/>}
