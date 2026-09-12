@@ -150,10 +150,10 @@
         };
 
         // ============================================
-        // TTS SERVICE – Gradio SSE API + License Validation
+        // TTS SERVICE – FastAPI Direct API + License Validation
         // ============================================
         const TtsService = {
-            API_BASE_URL: 'https://innkl24-shan-tts-api.hf.space/api/v1/tts',
+            API_BASE_URL: 'https://innkl24-shan-tts-api.hf.space',
 
             async getDeviceId() {
                 try {
@@ -165,44 +165,20 @@
                 }
             },
 
-            async _readSSE(streamUrl) {
-                const response = await fetch(streamUrl);
-                if (!response.ok) throw new Error(`Stream error: ${response.status}`);
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop() || '';
-
-                    let eventType = '';
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) eventType = line.slice(7).trim();
-                        if (line.startsWith('data: ') && eventType === 'complete') {
-                            reader.cancel();
-                            return JSON.parse(line.slice(6));
-                        }
-                    }
-                }
-                throw new Error('ไม่ได้รับผลลัพธ์จาก SSE stream');
-            },
-
             async generateSpeech(text, speed = 'normal', keyCode = '') {
                 const deviceId = await this.getDeviceId();
                 const rateMap = { slow: 0.7, normal: 1.0, fast: 1.3 };
                 const speedValue = rateMap[speed] || 1.0;
 
-                // ส่ง text, key_code และ device_id ไปประมวลผล
-                const callUrl = `${this.API_BASE_URL}/gradio_api/call/text_to_speech_api`;
-                const payload = { data: [text, null, speedValue, keyCode, deviceId] };
+                const endpoint = `${this.API_BASE_URL}/api/v1/tts`;
+                const payload = {
+                    text: text,
+                    speed: speedValue,
+                    key_code: keyCode,
+                    device_id: deviceId
+                };
 
-                const response = await fetch(callUrl, {
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
@@ -210,34 +186,33 @@
                 });
 
                 if (!response.ok) {
-                    const err = await response.text();
-                    throw new Error(`เซิร์ฟเวอร์ตอบกลับ ${response.status}: ${err}`);
-                }
-
-                const { event_id } = await response.json();
-                const streamUrl = `${this.API_BASE_URL}/gradio_api/call/text_to_speech_api/${event_id}`;
-                const output = await this._readSSE(streamUrl);
-
-                let audioPath = null;
-                if (Array.isArray(output) && output.length > 0) {
-                    const first = output[0];
-                    if (typeof first === 'string') {
-                        audioPath = first;
-                    } else if (first && typeof first === 'object') {
-                        audioPath = first.url || first.path || first.name || null;
+                    let errorMessage = `เซิร์ฟเวอร์ตอบกลับ ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        if (errorData && errorData.detail) {
+                            errorMessage = typeof errorData.detail === 'string' 
+                                ? errorData.detail 
+                                : JSON.stringify(errorData.detail);
+                        }
+                    } catch {
+                        const rawText = await response.text();
+                        if (rawText) errorMessage += `: ${rawText}`;
                     }
-                } else if (output && typeof output === 'object' && !Array.isArray(output)) {
-                    audioPath = output.url || output.path || output.name || null;
+                    throw new Error(errorMessage);
                 }
+
+                const data = await response.json();
+                
+                let audioPath = data.audio_url || data.url || data.path || data.file || null;
 
                 if (!audioPath) throw new Error('ဢမ်ႇႁၼ်လိင်ႉၾၢႆႇသဵင်');
 
                 let audioUrl;
-                if (audioPath.startsWith('http')) {
+                if (audioPath.startsWith('http://') || audioPath.startsWith('https://')) {
                     audioUrl = audioPath;
                 } else {
                     const cleanPath = audioPath.startsWith('/') ? audioPath : '/' + audioPath;
-                    audioUrl = `${this.API_BASE_URL}/file=${encodeURIComponent(cleanPath)}`;
+                    audioUrl = `${this.API_BASE_URL}${cleanPath}`;
                 }
 
                 return audioUrl;
@@ -597,8 +572,8 @@
             const handleGenerate = async () => {
                 if (!canGenerate) {
                     if (!keyCode.trim()) {
-                        setError('ၵရုဏႃႇထႅမ်ၼႄႉသွင်းႁူဝ်ႁၢႆး (กรุณากรอกรหัสเปิดใช้งาน License Key)');
-                        addToast('กรุณากรอกรหัสเปิดใช้งาน', 'error');
+                        setError('ၶႅၼ်းတေေႃႈသႂ်ႇမၢႆလပ်ႉၶႃႈ ( License Key)');
+                        addToast('ၶႅၼ်းတေႃႈသႂ်ႇမၢႆလပ်ႉဢၼ်မၢၼ်ႈမႅၼ်ႈၶႃႈ', 'error');
                     }
                     return;
                 }
@@ -663,7 +638,7 @@
                             <div className="card p-4 bg-emerald-50/50 border-emerald-100 flex flex-col md:flex-row items-center gap-3">
                                 <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm flex-shrink-0">
                                     <Icons.Key c="w-5 h-5 text-[#22A06B]"/>
-                                    <span>ႁူဝ်ႁၢႆး (License Key):</span>
+                                    <span>မၢႆလပ်ႉ (License Key):</span>
                                 </div>
                                 <input 
                                     type="text"
