@@ -201,36 +201,23 @@
                     throw new Error(errorMessage);
                 }
 
-                const data = await response.json();
+                // ดึงข้อมูลเป็น Blob (Binary Large Object) สำหรับไฟล์ audio/wav
+                const blob = await response.blob();
                 
-                let audioPath = data.audio_url || data.url || data.path || data.file || null;
-
-                if (!audioPath) throw new Error('ဢမ်ႇႁၼ်လိင်ႉၾၢႆႇသဵင်');
-
-                let audioUrl;
-                if (audioPath.startsWith('http://') || audioPath.startsWith('https://')) {
-                    audioUrl = audioPath;
-                } else {
-                    const cleanPath = audioPath.startsWith('/') ? audioPath : '/' + audioPath;
-                    audioUrl = `${this.API_BASE_URL}${cleanPath}`;
-                }
+                // แปลง Blob เป็น Object URL สำหรับนำไปใส่ใน <audio src="...">
+                const audioUrl = URL.createObjectURL(blob);
 
                 return audioUrl;
             },
 
             async downloadAudio(audioUrl, filename = 'shan-voice.wav') {
                 try {
-                    const response = await fetch(audioUrl);
-                    if (!response.ok) throw new Error('Download failed');
-                    const blob = await response.blob();
-                    const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
-                    link.href = url;
+                    link.href = audioUrl;
                     link.download = filename;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
                 } catch (error) {
                     throw new Error('တၢဝ်းလူတ်ႇၾၢႆႇသဵင်ဢမ်ႇလႆႈ');
                 }
