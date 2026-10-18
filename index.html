@@ -13,6 +13,12 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- โหลด Gradio JS Client ผ่าน CDN -->
+    <script type="module">
+        import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client/+esm";
+        window.GradioClient = Client;
+    </script>
+
     <!-- FingerprintJS สำหรับตรวจจับ Device ID -->
     <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
 
@@ -38,7 +44,6 @@
         }
         * { font-family: 'Noto Sans Thai', sans-serif; box-sizing: border-box; }
         body { background-color: var(--bg); color: var(--text-primary); margin: 0; min-height: 100vh; }
-        .transition-all-smooth { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
         
         button:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible {
             outline: 2px solid var(--primary);
@@ -47,7 +52,6 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
 
         .card {
             background: var(--card);
@@ -63,7 +67,6 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         .spinner { animation: spin 0.8s linear infinite; }
 
-        /* Audio Waveform Animation */
         .wave-bar {
             width: 3px;
             background-color: var(--primary);
@@ -102,9 +105,6 @@
             background: var(--primary-hover);
             transform: scale(1.06);
         }
-        .play-btn-large:active:not(:disabled) {
-            transform: scale(0.95);
-        }
         .play-btn-large:disabled {
             background: #94A3B8; cursor: not-allowed; opacity: 0.6; box-shadow: none;
         }
@@ -116,9 +116,6 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
 
-        // ============================================
-        // GLOBAL AUDIO CONTROLLER
-        // ============================================
         const GlobalAudio = {
             currentAudio: null,
             currentStopCallback: null,
@@ -127,9 +124,7 @@
                 if (this.currentAudio && this.currentAudio !== audioInstance) {
                     this.currentAudio.pause();
                     this.currentAudio.currentTime = 0;
-                    if (this.currentStopCallback) {
-                        this.currentStopCallback();
-                    }
+                    if (this.currentStopCallback) this.currentStopCallback();
                 }
                 this.currentAudio = audioInstance;
                 this.currentStopCallback = onStopCallback;
@@ -139,9 +134,7 @@
                 if (this.currentAudio) {
                     this.currentAudio.pause();
                     this.currentAudio.currentTime = 0;
-                    if (this.currentStopCallback) {
-                        this.currentStopCallback();
-                    }
+                    if (this.currentStopCallback) this.currentStopCallback();
                     this.currentAudio = null;
                     this.currentStopCallback = null;
                 }
@@ -149,55 +142,46 @@
         };
 
         // ============================================
-        // TTS SERVICE – เชื่อมต่อ Gradio API ผ่าน /api/predict
+        // TTS SERVICE – ใช้ @gradio/client เชื่อมต่อ HF Space ตรงๆ
         // ============================================
         const TtsService = {
-            API_BASE_URL: 'https://innkl24-shan-tts-api.hf.space',
+            spaceId: 'innkl24/shan-tts-api',
+            clientInstance: null,
+
+            async getClient() {
+                if (!this.clientInstance) {
+                    while (!window.GradioClient) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                    }
+                    this.clientInstance = await window.GradioClient.connect(this.spaceId);
+                }
+                return this.clientInstance;
+            },
 
             async generateSpeech(text, speed = 'normal') {
                 const rateMap = { slow: 0.7, normal: 1.0, fast: 1.3 };
                 const speedValue = rateMap[speed] || 1.0;
 
-                // เปลี่ยนมาใช้ /api/predict ที่เป็น endpoint มาตรฐานของ Gradio
-                const endpoint = `${this.API_BASE_URL}/api/predict`;
-                const payload = {
-                    data: [text, speedValue]
-                };
+                const client = await this.getClient();
+                
+                // เรียกใช้งาน API name ตรงกับฟังก์ชันใน app.py บน Hugging Face
+                const result = await client.predict("/generate_shan_audio", [text, speedValue]);
 
-                const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload),
-                    mode: 'cors',
-                });
-
-                if (!response.ok) {
-                    let errorMessage = `เซิร์ฟเวอร์ตอบกลับ ${response.status}`;
-                    try {
-                        const rawText = await response.text();
-                        if (rawText && !rawText.includes('<!DOCTYPE html>')) {
-                            errorMessage += `: ${rawText}`;
-                        }
-                    } catch {}
-                    throw new Error(errorMessage);
-                }
-
-                const json = await response.json();
-                if (!json.data || !json.data[0]) {
+                if (!result || !result.data || !result.data[0]) {
                     throw new Error('ไม่พบข้อมูลไฟล์เสียงจากเซิร์ฟเวอร์');
                 }
 
-                const audioOutput = json.data[0];
+                const audioOutput = result.data[0];
                 let audioUrl = '';
 
                 if (typeof audioOutput === 'string') {
-                    audioUrl = audioOutput.startsWith('http') ? audioOutput : `${this.API_BASE_URL}/file=${audioOutput}`;
+                    audioUrl = audioOutput.startsWith('http') ? audioOutput : `https://innkl24-shan-tts-api.hf.space/file=${audioOutput}`;
                 } else if (audioOutput && audioOutput.url) {
                     audioUrl = audioOutput.url;
                 } else if (audioOutput && audioOutput.path) {
-                    audioUrl = `${this.API_BASE_URL}/file=${audioOutput.path}`;
+                    audioUrl = `https://innkl24-shan-tts-api.hf.space/file=${audioOutput.path}`;
                 } else if (audioOutput && audioOutput.name) {
-                    audioUrl = `${this.API_BASE_URL}/file=${audioOutput.name}`;
+                    audioUrl = `https://innkl24-shan-tts-api.hf.space/file=${audioOutput.name}`;
                 } else {
                     throw new Error('รูปแบบไฟล์เสียงไม่ถูกต้อง');
                 }
@@ -224,9 +208,6 @@
             },
         };
 
-        // ============================================
-        // LOCAL STORAGE
-        // ============================================
         const StorageService = {
             HISTORY_KEY: 'shan_voice_history',
             SETTINGS_KEY: 'shan_voice_settings',
@@ -244,11 +225,7 @@
             }
         };
 
-        // ============================================
-        // ICONS
-        // ============================================
         const Icons = {
-            Home: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>,
             TextToSpeech: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg>,
             AudioFile: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>,
             Settings: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>,
@@ -264,13 +241,9 @@
             Close: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>,
             Info: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
             Clock: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>,
-            User: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>,
             Edit: ({c="w-5 h-5"}) => <svg className={c} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>,
         };
 
-        // ============================================
-        // TOAST NOTIFICATION
-        // ============================================
         const ToastContext = createContext(null);
         const ToastProvider = ({ children }) => {
             const [toasts, setToasts] = useState([]);
@@ -298,9 +271,6 @@
         };
         const useToast = () => useContext(ToastContext);
 
-        // ============================================
-        // ADVANCED AUDIO PLAYER
-        // ============================================
         const CustomAudioPlayer = ({ src, filename, onDownload }) => {
             const audioRef = useRef(new Audio());
             const progressRef = useRef(null);
@@ -359,9 +329,7 @@
 
             const changeSpeed = (rate) => {
                 setPlaybackRate(rate);
-                if (audioRef.current) {
-                    audioRef.current.playbackRate = rate;
-                }
+                if (audioRef.current) audioRef.current.playbackRate = rate;
             };
 
             const seek = (e) => {
@@ -426,9 +394,6 @@
             );
         };
 
-        // ============================================
-        // COMPONENTS
-        // ============================================
         const CharacterCounter = ({ count, max = 500 }) => {
             const color = count > max ? 'text-red-600 font-bold' : count >= max * 0.9 ? 'text-amber-500 font-bold' : 'text-slate-400';
             return <span className={`text-xs font-medium ${color}`}>{count.toLocaleString()} / {max.toLocaleString()} တူဝ်လိၵ်ႈ</span>;
@@ -503,9 +468,6 @@
             );
         };
 
-        // ============================================
-        // PAGES
-        // ============================================
         const TextToSpeechPage = () => {
             const [text, setText] = useState('');
             const [loading, setLoading] = useState(false);
@@ -525,14 +487,6 @@
                 }
                 return () => clearInterval(timer);
             }, [loading]);
-
-            useEffect(() => {
-                const restored = sessionStorage.getItem('shan_restore_text');
-                if (restored) {
-                    setText(restored);
-                    sessionStorage.removeItem('shan_restore_text');
-                }
-            }, []);
 
             const count = text.length;
             const canGenerate = count > 0 && count <= 500 && !loading;
@@ -664,7 +618,6 @@
             const [history, setHistory] = useState(StorageService.getHistory());
             const [searchTerm, setSearchTerm] = useState('');
             const { addToast } = useToast();
-
             const filtered = history.filter(i => i.textPreview.includes(searchTerm));
 
             const handleDownload = async (url, filename) => {
@@ -683,13 +636,7 @@
                 <div className="max-w-4xl mx-auto px-4 py-8">
                     <h1 className="text-2xl font-bold text-slate-800 mb-6">ၾၢႆႇသဵင်ၶႃႈ</h1>
                     <div className="mb-6">
-                        <input 
-                            type="text" 
-                            placeholder="တီႈႁႃၾၢႆႇသဵင်..." 
-                            value={searchTerm} 
-                            onChange={e => setSearchTerm(e.target.value)}
-                            className="w-full md:w-1/2 px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#22A06B] outline-none"
-                        />
+                        <input type="text" placeholder="တီႈႁႃၾၢႆႇသဵင်..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full md:w-1/2 px-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-[#22A06B] outline-none"/>
                     </div>
                     <AudioHistory history={filtered} onDownload={handleDownload} onDelete={handleDelete}/>
                 </div>
@@ -699,7 +646,6 @@
         const SettingsPage = () => {
             const [settings, setSettings] = useState(StorageService.getSettings());
             const { addToast } = useToast();
-
             const save = () => {
                 StorageService.saveSettings(settings);
                 addToast('ၵဵပ်းသိပ်းလွင်ႈမူၼ်ႉမေးယဝ်ႉ', 'success');
@@ -711,11 +657,7 @@
                     <div className="card p-6 space-y-6">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">တၢင်းဝႆးသဵင်ငဝ်ႈတိုၼ်း</label>
-                            <select 
-                                value={settings.defaultSpeed} 
-                                onChange={e => setSettings({ ...settings, defaultSpeed: e.target.value })}
-                                className="w-full p-3 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-[#22A06B]"
-                            >
+                            <select value={settings.defaultSpeed} onChange={e => setSettings({ ...settings, defaultSpeed: e.target.value })} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-[#22A06B]">
                                 <option value="slow">ထိူင်း (Slow)</option>
                                 <option value="normal">ပၢၼ်ၵၢင် (Normal)</option>
                                 <option value="fast">ဝႆး (Fast)</option>
@@ -729,21 +671,9 @@
             );
         };
 
-        // ============================================
-        // LAYOUT
-        // ============================================
         const AppLayout = () => {
             const [page, setPage] = useState('tts');
             const [isOpen, setIsOpen] = useState(false);
-
-            React.useEffect(() => {
-                if (window.gtag) {
-                    window.gtag('event', 'page_view', {
-                        page_title: page,
-                        page_path: `/${page}`
-                    });
-                }
-            }, [page]);
 
             const nav = [
                 { id: 'tts', label: 'လၢႆႈတူဝ်လိၵ်ႈပဵၼ်သဵင်', icon: <Icons.TextToSpeech/> },
@@ -751,48 +681,30 @@
                 { id: 'settings', label: 'တီႈမေး', icon: <Icons.Settings/> },
             ];
 
-            const handleNavClick = (id) => {
-                setPage(id);
-                setIsOpen(false);
-            };
-
             return (
                 <div className="flex min-h-screen relative overflow-x-hidden">
-                    <button 
-                        onClick={() => setIsOpen(!isOpen)}
-                        className="fixed top-4 left-4 z-50 p-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-md hover:bg-slate-50 active:scale-95 transition-all"
-                        title="เปิด/ปิด เมนู"
-                    >
+                    <button onClick={() => setIsOpen(!isOpen)} className="fixed top-4 left-4 z-50 p-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl shadow-md hover:bg-slate-50">
                         {isOpen ? <Icons.Close c="w-6 h-6"/> : <Icons.Menu c="w-6 h-6"/>}
                     </button>
-
-                    {isOpen && (
-                        <div 
-                            onClick={() => setIsOpen(false)}
-                            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30 transition-opacity"
-                        />
-                    )}
-
-                    <aside className={`w-64 bg-white border-r border-slate-200 fixed h-full z-40 flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    {isOpen && <div onClick={() => setIsOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-30"/>}
+                    <aside className={`w-64 bg-white border-r border-slate-200 fixed h-full z-40 flex flex-col transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-6 pt-16 flex items-center gap-3 border-b border-slate-100">
-                            <div className="w-10 h-10 bg-[#22A06B] rounded-2xl flex items-center justify-center text-white shadow-md shadow-green-900/10 flex-shrink-0">
+                            <div className="w-10 h-10 bg-[#22A06B] rounded-2xl flex items-center justify-center text-white shadow-md">
                                 <Icons.Waveform c="w-6 h-6"/>
                             </div>
                             <div>
                                 <h1 className="font-extrabold text-slate-800 text-lg leading-none">Shan Voice</h1>
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Text to Speech</span>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Text to Speech</span>
                             </div>
                         </div>
                         <nav className="flex-1 p-4 space-y-1">
                             {nav.map(item => (
-                                <button key={item.id} onClick={() => handleNavClick(item.id)}
-                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${page === item.id ? 'bg-[#E8F5EE] text-[#22A06B]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
+                                <button key={item.id} onClick={() => { setPage(item.id); setIsOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${page === item.id ? 'bg-[#E8F5EE] text-[#22A06B]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}>
                                     {item.icon} {item.label}
                                 </button>
                             ))}
                         </nav>
                     </aside>
-
                     <main className="flex-1 bg-slate-50 min-h-screen pt-12 md:pt-4">
                         {page === 'tts' && <TextToSpeechPage/>}
                         {page === 'audio' && <MyAudioPage/>}
@@ -802,12 +714,7 @@
             );
         };
 
-        const App = () => (
-            <ToastProvider>
-                <AppLayout/>
-            </ToastProvider>
-        );
-
+        const App = () => (<ToastProvider><AppLayout/></ToastProvider>);
         ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
     </script>
 </body>
