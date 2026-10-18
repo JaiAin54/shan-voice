@@ -17,14 +17,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
 
     <!-- Google tag (gtag.js) -->
- <script async src="https://www.googletagmanager.com/gtag/js?id=G-LGZ5Q2F7GW"></script>
- <script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
-
-  gtag('config', 'G-LGZ5Q2F7GW');
- </script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-LGZ5Q2F7GW"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-LGZ5Q2F7GW');
+    </script>
 
     <style>
         :root {
@@ -150,31 +149,19 @@
         };
 
         // ============================================
-        // TTS SERVICE – FastAPI Direct API
+        // TTS SERVICE – เชื่อมต่อกับ Gradio บน Hugging Face Spaces
         // ============================================
         const TtsService = {
             API_BASE_URL: 'https://innkl24-shan-tts-api.hf.space',
 
-            async getDeviceId() {
-                try {
-                    const fp = await FingerprintJS.load();
-                    const result = await fp.get();
-                    return result.visitorId;
-                } catch {
-                    return 'unknown_device';
-                }
-            },
-
             async generateSpeech(text, speed = 'normal') {
-                const deviceId = await this.getDeviceId();
                 const rateMap = { slow: 0.7, normal: 1.0, fast: 1.3 };
                 const speedValue = rateMap[speed] || 1.0;
 
-                const endpoint = `${this.API_BASE_URL}/api/v1/tts`;
+                // เรียกใช้งานผ่าน Gradio API Endpoint มาตรฐาน (/run/predict)
+                const endpoint = `${this.API_BASE_URL}/run/predict`;
                 const payload = {
-                    text: text,
-                    speed: speedValue,
-                    device_id: deviceId
+                    data: [text, speedValue]
                 };
 
                 const response = await fetch(endpoint, {
@@ -188,10 +175,8 @@
                     let errorMessage = `เซิร์ฟเวอร์ตอบกลับ ${response.status}`;
                     try {
                         const errorData = await response.json();
-                        if (errorData && errorData.detail) {
-                            errorMessage = typeof errorData.detail === 'string' 
-                                ? errorData.detail 
-                                : JSON.stringify(errorData.detail);
+                        if (errorData && errorData.error) {
+                            errorMessage = errorData.error;
                         }
                     } catch {
                         const rawText = await response.text();
@@ -200,10 +185,32 @@
                     throw new Error(errorMessage);
                 }
 
-                const blob = await response.blob();
-                const audioUrl = URL.createObjectURL(blob);
+                const json = await response.json();
+                if (!json.data || !json.data[0]) {
+                    throw new Error('ไม่พบข้อมูลไฟล์เสียงจากเซิร์ฟเวอร์');
+                }
 
-                return audioUrl;
+                const audioOutput = json.data[0];
+                let audioUrl = '';
+
+                // รองรับรูปแบบข้อมูลที่ Gradio ส่งกลับมา
+                if (typeof audioOutput === 'string') {
+                    audioUrl = audioOutput.startsWith('http') ? audioOutput : `${this.API_BASE_URL}/${audioOutput}`;
+                } else if (audioOutput && audioOutput.url) {
+                    audioUrl = audioOutput.url.startsWith('http') ? audioOutput.url : `${this.API_BASE_URL}${audioOutput.url}`;
+                } else if (audioOutput && audioOutput.path) {
+                    audioUrl = `${this.API_BASE_URL}/file=${audioOutput.path}`;
+                } else {
+                    throw new Error('รูปแบบไฟล์เสียงไม่ถูกต้อง');
+                }
+
+                // โหลดไฟล์เสียงมาแปลงเป็น Object URL สำหรับเล่นในเบราว์เซอร์
+                const audioResponse = await fetch(audioUrl);
+                if (!audioResponse.ok) {
+                    throw new Error('ไม่สามารถดาวน์โหลดไฟล์เสียงได้');
+                }
+                const blob = await audioResponse.blob();
+                return URL.createObjectURL(blob);
             },
 
             async downloadAudio(audioUrl, filename = 'shan-voice.wav') {
@@ -405,7 +412,6 @@
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200/60">
-                        {/* SPEED SELECTOR CONTROLLER */}
                         <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl">
                             {[0.75, 1.0, 1.25, 1.5].map(rate => (
                                 <button key={rate} onClick={() => changeSpeed(rate)}
