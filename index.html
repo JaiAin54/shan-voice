@@ -13,15 +13,6 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- โหลด Gradio JS Client ผ่าน CDN -->
-    <script type="module">
-        import { Client } from "https://cdn.jsdelivr.net/npm/@gradio/client/+esm";
-        window.GradioClient = Client;
-    </script>
-
-    <!-- FingerprintJS สำหรับตรวจจับ Device ID -->
-    <script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@3/dist/fp.min.js"></script>
-
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-LGZ5Q2F7GW"></script>
     <script>
@@ -142,55 +133,31 @@
         };
 
         // ============================================
-        // TTS SERVICE – ใช้ @gradio/client เชื่อมต่อ HF Space ตรงๆ
+        // TTS SERVICE – เรียกใช้งานผ่าน Vercel Serverless API Proxy ของตัวเอง
         // ============================================
         const TtsService = {
-            spaceId: 'innkl24/shan-tts-api',
-            clientInstance: null,
-
-            async getClient() {
-                if (!this.clientInstance) {
-                    while (!window.GradioClient) {
-                        await new Promise(resolve => setTimeout(resolve, 100));
-                    }
-                    this.clientInstance = await window.GradioClient.connect(this.spaceId);
-                }
-                return this.clientInstance;
-            },
-
             async generateSpeech(text, speed = 'normal') {
                 const rateMap = { slow: 0.7, normal: 1.0, fast: 1.3 };
                 const speedValue = rateMap[speed] || 1.0;
 
-                const client = await this.getClient();
-                
-                // เรียกใช้งาน API name ตรงกับฟังก์ชันใน app.py บน Hugging Face
-                const result = await client.predict("/generate_shan_audio", [text, speedValue]);
+                const response = await fetch('/api/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, speed: speedValue })
+                });
 
-                if (!result || !result.data || !result.data[0]) {
-                    throw new Error('ไม่พบข้อมูลไฟล์เสียงจากเซิร์ฟเวอร์');
+                if (!response.ok) {
+                    let errorMessage = 'သၢင်ႈသဵင်ဢမ်ႇလႆႈ';
+                    try {
+                        const errData = await response.json();
+                        if (errData && errData.error) {
+                            errorMessage = errData.error;
+                        }
+                    } catch {}
+                    throw new Error(errorMessage);
                 }
 
-                const audioOutput = result.data[0];
-                let audioUrl = '';
-
-                if (typeof audioOutput === 'string') {
-                    audioUrl = audioOutput.startsWith('http') ? audioOutput : `https://innkl24-shan-tts-api.hf.space/file=${audioOutput}`;
-                } else if (audioOutput && audioOutput.url) {
-                    audioUrl = audioOutput.url;
-                } else if (audioOutput && audioOutput.path) {
-                    audioUrl = `https://innkl24-shan-tts-api.hf.space/file=${audioOutput.path}`;
-                } else if (audioOutput && audioOutput.name) {
-                    audioUrl = `https://innkl24-shan-tts-api.hf.space/file=${audioOutput.name}`;
-                } else {
-                    throw new Error('รูปแบบไฟล์เสียงไม่ถูกต้อง');
-                }
-
-                const audioResponse = await fetch(audioUrl);
-                if (!audioResponse.ok) {
-                    throw new Error('ไม่สามารถดาวน์โหลดไฟล์เสียงได้');
-                }
-                const blob = await audioResponse.blob();
+                const blob = await response.blob();
                 return URL.createObjectURL(blob);
             },
 
