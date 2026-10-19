@@ -348,7 +348,7 @@
                             {[0.75, 1.0, 1.25, 1.5].map(rate => (
                                 <button key={rate} onClick={() => changeSpeed(rate)}
                                     className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${playbackRate === rate ? 'bg-white text-[#22A06B] shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>
-                                    {rate === 1.0 ? '1x (ปกติ)' : `${rate}x`}
+                                    {rate === 1.0 ? '1x (ပၢၼ်ၵၢင်)' : `${rate}x`}
                                 </button>
                             ))}
                         </div>
@@ -527,7 +527,7 @@
                                 <textarea 
                                     value={text} 
                                     onChange={e => setText(e.target.value.slice(0, 500))} 
-                                    placeholder="ပေႃႉလိၵ်ႈတႆး/ၵူးဢဝ်မႃးလႆႈ"
+                                    placeholder="ပေႃႉလိၵ်ႈတႆး/ၵူးဢဝ်မႃးတၢင်ႇတီႈလႆႈ"
                                     className="w-full h-64 p-4 border border-slate-200 rounded-2xl text-base text-slate-800 focus:ring-2 focus:ring-[#22A06B] focus:border-transparent transition-all outline-none resize-none"
                                     disabled={loading} 
                                     maxLength={500}
