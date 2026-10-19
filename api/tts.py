@@ -1,6 +1,5 @@
 import os
 import json
-import shutil
 from http.server import BaseHTTPRequestHandler
 from gradio_client import Client
 
@@ -25,20 +24,27 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "HF_TOKEN not configured on server"}).encode('utf-8'))
                 return
 
-            # เชื่อมต่อ Client กับ Private Space
+            # 1. เชื่อมต่อ Client
             try:
                 client = Client("innkl24/shan-tts-api", token=hf_token)
             except TypeError:
                 client = Client("innkl24/shan-tts-api", hf_token=hf_token)
 
-            # ใช้ fn_index=0 เพื่อเรียกฟังก์ชันแรกสุดของ Space เสมอ (หมดปัญหาเรื่อง api_name)
-            result = client.predict(
-                text,
-                speed,
-                fn_index=0
-            )
+            # 2. ดึงชื่อ Named Endpoint อัตโนมัติจาก Space
+            api_info = client.view_api(return_format="dict")
+            named_endpoints = api_info.get("named_endpoints", {})
 
-            # ดึง path ของไฟล์เสียง
+            # 3. ยิงคำสั่ง predict เข้า endpoint ที่พบ
+            result = None
+            if named_endpoints:
+                # เลือก endpoint ตัวแรกที่มีใน Space อัตโนมัติ (เช่น '/predict' หรือ '/generate_shan_audio')
+                endpoint_name = list(named_endpoints.keys())[0]
+                result = client.predict(text=text, speed=speed, api_name=endpoint_name)
+            else:
+                # กรณีไม่มีชื่อ endpoint ให้ส่งตามลำดับพารามิเตอร์
+                result = client.predict(text, speed)
+
+            # 4. ดึง path ของไฟล์เสียงที่สร้างเสร็จ
             audio_path = None
             if isinstance(result, str):
                 audio_path = result
@@ -48,9 +54,9 @@ class handler(BaseHTTPRequestHandler):
                 audio_path = result['name']
 
             if not audio_path or not os.path.exists(audio_path):
-                raise Exception(f"Audio file was not generated properly. Result: {result}")
+                raise Exception(f"ไม่พบไฟล์เสียงที่สร้าง Result: {result}")
 
-            # อ่านไฟล์เสียงส่งกลับหน้าเว็บ
+            # 5. ส่งไฟล์เสียงกลับไปที่หน้าบ้าน
             with open(audio_path, 'rb') as f:
                 audio_bytes = f.read()
 
