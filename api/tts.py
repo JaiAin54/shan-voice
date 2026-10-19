@@ -11,7 +11,6 @@ class handler(BaseHTTPRequestHandler):
             data = json.loads(body.decode('utf-8'))
             
             text = data.get('text', '')
-            # แปลง speed ให้เป็น float เสมอ
             try:
                 speed = float(data.get('speed', 1.0))
             except (ValueError, TypeError):
@@ -25,20 +24,29 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({"error": "HF_TOKEN not configured on server"}).encode('utf-8'))
                 return
 
-            # รองรับทั้งเวอร์ชันใหม่ (token) และเก่า (hf_token) แบบกันเหนียว 100%
+            # เชื่อมต่อ Client
             try:
                 client = Client("innkl24/shan-tts-api", token=hf_token)
             except TypeError:
                 client = Client("innkl24/shan-tts-api", hf_token=hf_token)
 
-            # จุดสำคัญ: gr.Interface จะใช้ api_name="/predict"
-            result = client.predict(
-                text=text, 
-                speed=speed, 
-                api_name="/predict"
-            )
+            # แก้จุดนี้: ลองเรียกตามลำดับเพื่อความชัวร์ (ไม่ใส่ api_name -> ชื่อฟังก์ชัน -> /predict)
+            result = None
+            for api_endpoint in [None, "/generate_shan_audio", "/predict"]:
+                try:
+                    if api_endpoint is None:
+                        result = client.predict(text, speed)
+                    else:
+                        result = client.predict(text=text, speed=speed, api_name=api_endpoint)
+                    break
+                except Exception as call_err:
+                    last_err = call_err
+                    continue
+
+            if result is None:
+                raise last_err
             
-            # ดึง path ของไฟล์เสียงที่สร้างเสร็จ
+            # ดึง path ของไฟล์เสียง
             audio_path = result if isinstance(result, str) else result[0]
             
             with open(audio_path, 'rb') as f:
